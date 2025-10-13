@@ -674,7 +674,7 @@ class Master_Course_List_Importer {
                 'type'  => 'price',
                 'key'   => 'price',
             ),
-            'print-price'     -> array(
+            'print-price'     => array(
                 'label' => __( 'Print price', 'master-course-list' ),
                 'type'  => 'price',
                 'key'   => 'price_print',
