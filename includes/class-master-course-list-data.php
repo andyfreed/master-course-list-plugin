@@ -21,6 +21,13 @@ class Master_Course_List_Data {
     private static $metadata_fields = null;
 
     /**
+     * Cached lookup for course numbers keyed by normalized value.
+     *
+     * @var array|null
+     */
+    private static $course_number_index = null;
+
+    /**
      * Cached FLMS course query table name.
      *
      * @var string|null
@@ -32,6 +39,13 @@ class Master_Course_List_Data {
      */
     public static function flms_available() {
         return class_exists( 'FLMS_Course' );
+    }
+
+    /**
+     * Reset cached metadata definitions.
+     */
+    public static function flush_metadata_cache() {
+        self::$metadata_fields = null;
     }
 
     /**
@@ -61,27 +75,52 @@ class Master_Course_List_Data {
      * @return int Course ID or 0 if not found.
      */
     public static function find_course_id_by_number( $course_number, $type = 'global' ) {
+        $normalized    = self::normalize_course_number( $course_number );
         $course_number = trim( (string) $course_number );
-        if ( '' === $course_number ) {
+
+        if ( '' === $course_number && '' === $normalized ) {
             return 0;
         }
 
-        global $wpdb;
+        $index = self::get_course_number_index( $type );
+
+        if ( '' !== $normalized && isset( $index[ $normalized ] ) ) {
+            return (int) $index[ $normalized ];
+        }
+
+        $candidates = array_unique(
+            array_filter(
+                array(
+                    $course_number,
+                    $normalized,
+                    ltrim( $course_number, '#' ),
+                    '#' . ltrim( $course_number, '#' ),
+                ),
+                'strlen'
+            )
+        );
 
         $meta_key = 'course_number_' . sanitize_key( $type );
         if ( 'course_number_global' !== $meta_key ) {
-            // Keep compatibility for the main identifier.
             if ( 'global' === $type ) {
                 $meta_key = 'course_number_global';
             }
         }
 
+        global $wpdb;
         $table = self::get_course_query_table();
 
-        $sql       = $wpdb->prepare( "SELECT course_id FROM {$table} WHERE meta_key = %s AND meta_value = %s LIMIT 1", $meta_key, $course_number );
-        $course_id = (int) $wpdb->get_var( $sql );
+        foreach ( $candidates as $candidate ) {
+            $sql       = $wpdb->prepare( "SELECT course_id FROM {$table} WHERE meta_key = %s AND meta_value = %s LIMIT 1", $meta_key, $candidate );
+            $course_id = (int) $wpdb->get_var( $sql );
 
-        return $course_id;
+            if ( $course_id > 0 ) {
+                self::add_course_number_to_index( $normalized ?: self::normalize_course_number( $candidate ), $course_id, $type );
+                return $course_id;
+            }
+        }
+
+        return 0;
     }
 
     /**
@@ -129,29 +168,39 @@ class Master_Course_List_Data {
 
         self::$metadata_fields = array();
 
-        if ( ! self::flms_available() || ! class_exists( 'FLMS_Module_Course_Metadata' ) ) {
-            return self::$metadata_fields;
-        }
-
-        $metadata_module = new FLMS_Module_Course_Metadata();
-        $fields           = $metadata_module->get_course_metadata_settings_fields();
-
-        if ( empty( $fields ) || ! is_array( $fields ) ) {
-            return self::$metadata_fields;
-        }
-
-        foreach ( $fields as $slug => $field ) {
-            if ( ! isset( $field['status'] ) || 'active' !== $field['status'] ) {
+        // Prime with any definitions saved by the schema helper.
+        foreach ( Master_Course_List_Schema::get_registered_metadata_fields() as $slug => $definition ) {
+            if ( empty( $definition['status'] ) || 'active' !== $definition['status'] ) {
                 continue;
             }
 
-            $label       = isset( $field['name'] ) ? $field['name'] : $slug;
-            $description = isset( $field['description'] ) ? $field['description'] : '';
-
             self::$metadata_fields[ $slug ] = array(
-                'label'       => $label,
-                'description' => $description,
+                'label'       => $definition['label'],
+                'description' => isset( $definition['description'] ) ? $definition['description'] : '',
             );
+        }
+
+        if ( self::flms_available() && class_exists( 'FLMS_Module_Course_Metadata' ) ) {
+            $metadata_module = new FLMS_Module_Course_Metadata();
+            $fields           = $metadata_module->get_course_metadata_settings_fields();
+
+            if ( ! empty( $fields ) && is_array( $fields ) ) {
+                foreach ( $fields as $slug => $field ) {
+                    if ( ! isset( $field['status'] ) || 'active' !== $field['status'] ) {
+                        continue;
+                    }
+
+                    $label       = isset( $field['name'] ) ? $field['name'] : $slug;
+                    $description = isset( $field['description'] ) ? $field['description'] : '';
+
+                    if ( ! isset( self::$metadata_fields[ $slug ] ) ) {
+                        self::$metadata_fields[ $slug ] = array(
+                            'label'       => $label,
+                            'description' => $description,
+                        );
+                    }
+                }
+            }
         }
 
         return self::$metadata_fields;
@@ -277,7 +326,117 @@ class Master_Course_List_Data {
             'modified'           => get_post_modified_time( 'U', true, $post ),
         );
     }
+
+    /**
+     * Normalize course number string for comparisons.
+     *
+     * @param string $number Raw course number.
+     * @return string
+     */
+    private static function normalize_course_number( $number ) {
+        $number = trim( (string) $number );
+        if ( '' === $number ) {
+            return '';
+        }
+
+        $number = strtoupper( $number );
+        $number = ltrim( $number, '#' );
+        $number = preg_replace( '/[^A-Z0-9\-]/', '', $number );
+
+        return $number;
+    }
+
+    /**
+     * Build or retrieve the cached course number index.
+     *
+     * @param string $type Course number type key.
+     * @return array
+     */
+    private static function get_course_number_index( $type = 'global' ) {
+        if ( null === self::$course_number_index ) {
+            self::$course_number_index = array();
+        }
+
+        if ( isset( self::$course_number_index[ $type ] ) ) {
+            return self::$course_number_index[ $type ];
+        }
+
+        self::$course_number_index[ $type ] = array();
+
+        if ( ! self::flms_available() ) {
+            return self::$course_number_index[ $type ];
+        }
+
+        $course_ids = get_posts(
+            array(
+                'post_type'      => 'flms-courses',
+                'post_status'    => 'any',
+                'fields'         => 'ids',
+                'posts_per_page' => -1,
+                'no_found_rows'  => true,
+            )
+        );
+
+        foreach ( $course_ids as $course_id ) {
+            $versions = get_post_meta( $course_id, 'flms_version_content', true );
+            if ( empty( $versions ) || ! is_array( $versions ) ) {
+                continue;
+            }
+
+            foreach ( $versions as $version ) {
+                if ( ! isset( $version['course_numbers'] ) || ! is_array( $version['course_numbers'] ) ) {
+                    continue;
+                }
+
+                foreach ( $version['course_numbers'] as $number_type => $value ) {
+                    if ( 'global' !== $type && $number_type !== $type ) {
+                        continue;
+                    }
+
+                    if ( 'global' === $type && 'global' !== $number_type ) {
+                        continue;
+                    }
+
+                    $normalized = self::normalize_course_number( $value );
+                    if ( '' === $normalized ) {
+                        continue;
+                    }
+
+                    if ( ! isset( self::$course_number_index[ $type ][ $normalized ] ) ) {
+                        self::$course_number_index[ $type ][ $normalized ] = (int) $course_id;
+                    }
+                }
+            }
+        }
+
+        return self::$course_number_index[ $type ];
+    }
+
+    /**
+     * Add a course number to the runtime index for faster subsequent lookups.
+     *
+     * @param string $normalized Normalized course number.
+     * @param int    $course_id  Course ID.
+     * @param string $type       Course number type.
+     */
+    private static function add_course_number_to_index( $normalized, $course_id, $type = 'global' ) {
+        $normalized = self::normalize_course_number( $normalized );
+        $course_id  = (int) $course_id;
+
+        if ( '' === $normalized || $course_id <= 0 ) {
+            return;
+        }
+
+        if ( null === self::$course_number_index ) {
+            self::$course_number_index = array();
+        }
+
+        if ( ! isset( self::$course_number_index[ $type ] ) || ! is_array( self::$course_number_index[ $type ] ) ) {
+            self::$course_number_index[ $type ] = array();
+        }
+
+        if ( ! isset( self::$course_number_index[ $type ][ $normalized ] ) ) {
+            self::$course_number_index[ $type ][ $normalized ] = $course_id;
+        }
+    }
 }
-
-
-
