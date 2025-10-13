@@ -3,7 +3,7 @@
 Plugin Name: Master Course List
 Description: Admin tools for managing BHFE course metadata directly in WordPress.
 Version: 0.1.0
-Author: Skynet
+Author: Beacon Hill Financial Educators
 License: GPL2
 Text Domain: master-course-list
 */
