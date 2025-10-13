@@ -57,6 +57,7 @@ class Master_Course_List_Plugin {
      * Load required plugin files.
      */
     private function load_dependencies() {
+        require_once MCL_PLUGIN_DIR . 'includes/class-master-course-list-schema.php';
         require_once MCL_PLUGIN_DIR . 'includes/class-master-course-list-data.php';
         require_once MCL_PLUGIN_DIR . 'includes/class-master-course-list-table.php';
         require_once MCL_PLUGIN_DIR . 'includes/class-master-course-list-importer.php';
@@ -64,6 +65,3 @@ class Master_Course_List_Plugin {
         require_once MCL_PLUGIN_DIR . 'includes/class-master-course-list-admin.php';
     }
 }
-
-
-
