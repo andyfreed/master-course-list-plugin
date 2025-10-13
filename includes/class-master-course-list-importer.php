@@ -228,6 +228,22 @@ class Master_Course_List_Importer {
     }
 
     /**
+     * Normalize course numbers for duplicate detection and lookups.
+     */
+    private function normalize_course_number_value( $value ) {
+        $value = trim( (string) $value );
+        if ( '' === $value ) {
+            return '';
+        }
+
+        $value = strtoupper( $value );
+        $value = ltrim( $value, '#' );
+        $value = preg_replace( '/[^A-Z0-9\-]/', '', $value );
+
+        return $value;
+    }
+
+    /**
      * Render headline summary list.
      */
     private function render_summary( array $summary, $dry_run ) {
@@ -438,10 +454,20 @@ class Master_Course_List_Importer {
 
             $summary['rows_with_course_number']++;
 
-            if ( ! isset( $seen_numbers[ $parsed_row['course_number'] ] ) ) {
-                $seen_numbers[ $parsed_row['course_number'] ] = array( $row_index );
+            $normalized_number = $this->normalize_course_number_value( $parsed_row['course_number'] );
+            $number_key        = $normalized_number ? $normalized_number : $parsed_row['course_number'];
+
+            if ( ! isset( $seen_numbers[ $number_key ] ) ) {
+                $seen_numbers[ $number_key ] = array(
+                    'value' => $parsed_row['course_number'],
+                    'key'   => $number_key,
+                    'rows'  => array( $row_index ),
+                );
             } else {
-                $seen_numbers[ $parsed_row['course_number'] ][] = $row_index;
+                $seen_numbers[ $number_key ]['rows'][] = $row_index;
+                if ( '' === $seen_numbers[ $number_key ]['value'] ) {
+                    $seen_numbers[ $number_key ]['value'] = $parsed_row['course_number'];
+                }
             }
 
             $course_id = Master_Course_List_Data::find_course_id_by_number( $parsed_row['course_number'] );
@@ -465,9 +491,13 @@ class Master_Course_List_Importer {
         fclose( $handle );
         wp_delete_file( $path );
 
-        foreach ( $seen_numbers as $number => $rows ) {
-            if ( count( $rows ) > 1 ) {
-                $summary['duplicate_numbers'][ $number ] = $rows;
+        foreach ( $seen_numbers as $entry ) {
+            if ( count( $entry['rows'] ) > 1 ) {
+                $display_number = $entry['value'];
+                if ( '' === $display_number && ! empty( $entry['key'] ) ) {
+                    $display_number = $entry['key'];
+                }
+                $summary['duplicate_numbers'][ $display_number ] = $entry['rows'];
             }
         }
 
@@ -579,6 +609,17 @@ class Master_Course_List_Importer {
             }
         }
 
+        $metadata_slug = Master_Course_List_Schema::ensure_metadata_field( $header );
+
+        if ( '' !== $metadata_slug ) {
+            return array(
+                'original' => $header,
+                'label'    => $header,
+                'type'     => 'metadata',
+                'key'      => $metadata_slug,
+            );
+        }
+
         return array(
             'original' => $header,
             'label'    => __( 'Unmapped column', 'master-course-list' ),
@@ -633,7 +674,7 @@ class Master_Course_List_Importer {
                 'type'  => 'price',
                 'key'   => 'price',
             ),
-            'print-price'     => array(
+            'print-price'     -> array(
                 'label' => __( 'Print price', 'master-course-list' ),
                 'type'  => 'price',
                 'key'   => 'price_print',
@@ -713,6 +754,3 @@ class Master_Course_List_Importer {
         return $data;
     }
 }
-
-
-
