@@ -7,6 +7,7 @@ This WordPress plugin adds an admin interface for managing course metadata that 
 - Read-only Course List table that surfaces course numbers, credit totals, metadata, and WooCommerce product links.
 - CSV importer with dry-run support to preview how spreadsheet columns map into the LMS before applying changes.
 - Sync layer that updates the latest course version with credits, course numbers, notes, word counts, and prices while refreshing FLMS search metadata.
+- Automatic registration of spreadsheet columns as course metadata so new headings appear in WordPress without code changes.
 
 ## Requirements
 
