@@ -59,6 +59,7 @@ class Master_Course_List_Admin {
     public function render_admin_page() {
         echo '<div class="wrap master-course-list-admin">';
         echo '<h1 class="wp-heading-inline">' . esc_html__( 'Master Course List', 'master-course-list' ) . '</h1>';
+        echo '<p class="description">' . esc_html__( 'Use this view to audit course numbers, credit totals, and metadata synced from the master course list. Scroll horizontally to view all columns.', 'master-course-list' ) . '</p>';
 
         if ( ! Master_Course_List_Data::flms_available() ) {
             echo '<div class="notice notice-warning"><p>' . esc_html__( 'Fragments LMS must be active to display course data.', 'master-course-list' ) . '</p></div>';
@@ -68,6 +69,18 @@ class Master_Course_List_Admin {
 
         $table = new Master_Course_List_Table();
         $table->prepare_items();
+
+        static $styles_printed = false;
+        if ( ! $styles_printed ) {
+            $styles_printed = true;
+            echo '<style id="mcl-admin-styles">'
+                . '.mcl-table-container{overflow-x:auto;margin-top:1em;border:1px solid #dcdcde;border-radius:4px;background:#fff;}'
+                . '.mcl-table-container table.wp-list-table{min-width:1200px;border:0;margin-bottom:0;}'
+                . '.mcl-table-container table.wp-list-table thead tr th, .mcl-table-container table.wp-list-table tbody tr td{white-space:nowrap;}'
+                . '.mcl-table-container table.wp-list-table th.column-title, .mcl-table-container table.wp-list-table td.column-title{position:sticky;left:0;background:#fff;z-index:3;box-shadow:2px 0 0 rgba(220,220,222,.75);max-width:220px;white-space:normal;}'
+                . '.mcl-table-container table.wp-list-table th.column-course_number, .mcl-table-container table.wp-list-table td.column-course_number{position:sticky;left:220px;background:#fff;z-index:2;box-shadow:2px 0 0 rgba(220,220,222,.5);}'
+                . '</style>';
+        }
 
         echo '<form method="get">';
         // Preserve existing query args when submitting search.
@@ -79,11 +92,11 @@ class Master_Course_List_Admin {
 
         $table->search_box( __( 'Search courses', 'master-course-list' ), 'mcl-courses' );
 
+        echo '<div class="mcl-table-container">';
         $table->display();
+        echo '</div>';
 
         echo '</form>';
-
-        echo '<p class="description">' . esc_html__( 'Use this view to audit course numbers, credit totals, and metadata synced from the master course list.', 'master-course-list' ) . '</p>';
 
         echo '</div>';
     }
@@ -103,6 +116,3 @@ class Master_Course_List_Admin {
         $this->importer->render_page();
     }
 }
-
-
-
