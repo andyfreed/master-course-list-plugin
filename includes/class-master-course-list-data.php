@@ -223,17 +223,35 @@ class Master_Course_List_Data {
 
         $args = wp_parse_args( $args, $defaults );
 
+        $orderby = sanitize_key( $args['orderby'] );
+        if ( '' === $orderby ) {
+            $orderby = 'title';
+        }
+
+        $order = in_array( strtoupper( $args['order'] ), array( 'ASC', 'DESC' ), true ) ? strtoupper( $args['order'] ) : 'ASC';
+
         $query_args = array(
             'post_type'      => 'flms-courses',
             'post_status'    => array( 'publish', 'draft', 'pending' ),
             'posts_per_page' => absint( $args['per_page'] ),
             'paged'          => max( 1, absint( $args['paged'] ) ),
-            'orderby'        => sanitize_key( $args['orderby'] ),
-            'order'          => in_array( strtoupper( $args['order'] ), array( 'ASC', 'DESC' ), true ) ? strtoupper( $args['order'] ) : 'ASC',
+            'orderby'        => $orderby,
+            'order'          => $order,
         );
 
-        if ( ! empty( $args['search'] ) ) {
-            $query_args['s'] = $args['search'];
+        $search_string = isset( $args['search'] ) ? trim( (string) $args['search'] ) : '';
+        $search_ids    = array();
+
+        if ( '' !== $search_string ) {
+            $search_ids = self::search_course_ids_by_number( $search_string );
+        }
+
+        if ( ! empty( $search_ids ) ) {
+            $query_args['post__in'] = $search_ids;
+            $query_args['orderby']  = 'post__in';
+            $query_args['order']    = 'ASC';
+        } elseif ( '' !== $search_string ) {
+            $query_args['s'] = $search_string;
         }
 
         $query = new WP_Query( $query_args );
@@ -438,5 +456,36 @@ class Master_Course_List_Data {
         if ( ! isset( self::$course_number_index[ $type ][ $normalized ] ) ) {
             self::$course_number_index[ $type ][ $normalized ] = $course_id;
         }
+    }
+
+    /**
+     * Search for course IDs by course number input.
+     *
+     * @param string $search User-provided search value.
+     * @return array
+     */
+    public static function search_course_ids_by_number( $search ) {
+        $search = trim( (string) $search );
+        if ( '' === $search ) {
+            return array();
+        }
+
+        $normalized = self::normalize_course_number( $search );
+        $index      = self::get_course_number_index( 'global' );
+        $ids        = array();
+
+        if ( '' !== $normalized && isset( $index[ $normalized ] ) ) {
+            $ids[] = (int) $index[ $normalized ];
+        }
+
+        if ( empty( $ids ) && '' !== $normalized ) {
+            foreach ( $index as $number => $course_id ) {
+                if ( false !== strpos( $number, $normalized ) ) {
+                    $ids[] = (int) $course_id;
+                }
+            }
+        }
+
+        return array_values( array_unique( $ids ) );
     }
 }
